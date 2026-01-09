@@ -1,0 +1,100 @@
+<view class="page">
+  <view class="monthbar">
+    <button class="btn mini" size="mini" bindtap="onPrevMonth">上月</button>
+    <view class="monthtitle">
+      <text class="monthtitle-text">{{year}}年{{monthIndexPlus1}}月</text>
+    </view>
+    <button class="btn mini" size="mini" bindtap="onNextMonth">下月</button>
+  </view>
+
+  <view class="actions">
+    <button class="btn mini" size="mini" bindtap="onSelectAllMonth">全选本月</button>
+    <button class="btn mini" size="mini" bindtap="onDeselectAllMonth">取消本月</button>
+    <button class="btn mini danger" size="mini" bindtap="onClearStorage">清空数据</button>
+  </view>
+
+  <view class="calendar">
+    <view class="week-header">
+      <view
+        class="week-cell"
+        wx:for="{{weekdays}}"
+        wx:key="*this"
+        bindtap="onToggleWeekdayColumn"
+        data-weekday="{{index}}"
+      >
+        <text class="week-text">周{{item}}</text>
+        <text class="week-check" wx:if="{{weekdayColumnAllSelected[index]}}">✓</text>
+      </view>
+    </view>
+
+    <view class="grid">
+      <view
+        wx:for="{{calendarCells}}"
+        wx:key="index"
+        class="cell {{item.empty ? 'empty' : ''}} {{item.selected ? 'selected' : ''}}"
+        bindtap="onToggleDay"
+        data-datestr="{{item.dateStr}}"
+      >
+        <text class="cell-text">{{item.empty ? '' : item.day}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row">
+      <text class="label">月薪</text>
+      <input
+        class="input"
+        type="number"
+        value="{{monthlySalary}}"
+        placeholder="例如 8000"
+        bindinput="onSalaryInput"
+      />
+    </view>
+    <view class="row">
+      <text class="label">应出勤(天)</text>
+      <input
+        class="input"
+        type="number"
+        value="{{workDays}}"
+        placeholder="0-31"
+        bindinput="onWorkDaysInput"
+        bindblur="onWorkDaysBlur"
+      />
+    </view>
+  </view>
+
+  <view class="card result-card">
+    <view class="result-top">
+      <text class="result-title">计算结果</text>
+      <text class="result-amount">￥{{salaryResultText}}</text>
+    </view>
+    <text class="muted result-formula">{{resultText}}</text>
+  </view>
+
+  <view class="selectedbar">
+    <text>已选 {{selectedCount}} 天</text>
+    <button class="btn mini" size="mini" bindtap="onToggleSelectedList">
+      {{showSelectedList ? '隐藏明细' : '显示明细'}}
+    </button>
+  </view>
+
+  <view wx:if="{{showSelectedList}}" class="card">
+    <scroll-view class="selected-list" scroll-y="true">
+      <view
+        class="selected-item"
+        wx:for="{{selectedDatesDisplay}}"
+        wx:key="dateStr"
+      >
+        <text>{{item.dateStr}} {{item.weekdayLabel}}</text>
+      </view>
+      <view wx:if="{{selectedDatesDisplay.length == 0}}" class="selected-empty muted">
+        <text>暂无选择</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view class="status muted">
+    <text>{{storageStatus}}</text>
+  </view>
+</view>

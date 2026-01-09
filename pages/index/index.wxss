@@ -1,0 +1,190 @@
+.page {
+  padding: 24rpx;
+}
+
+.monthbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 16rpx 0;
+  background: #f6f7fb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.monthtitle {
+  flex: 1;
+  text-align: center;
+}
+
+.monthtitle-text {
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin: 8rpx 0 18rpx;
+}
+
+.btn.mini {
+  padding: 0 18rpx;
+}
+
+.btn.danger {
+  color: #fff;
+  background: #e64646;
+}
+
+.calendar {
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 14rpx;
+  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.06);
+}
+
+.week-header {
+  display: flex;
+  margin-bottom: 8rpx;
+}
+
+.week-cell {
+  width: 14.2857%;
+  text-align: center;
+  padding: 10rpx 0;
+  border-radius: 12rpx;
+  background: #f3f5fa;
+  position: relative;
+}
+
+.week-text {
+  font-size: 24rpx;
+  color: #444;
+}
+
+.week-check {
+  position: absolute;
+  right: 10rpx;
+  top: 6rpx;
+  font-size: 22rpx;
+  color: #07c160;
+  font-weight: 700;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.cell {
+  width: 14.2857%;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
+  margin: 4rpx 0;
+}
+
+.cell.empty {
+  background: #eef0f5;
+}
+
+.cell.selected {
+  background: #07c160;
+}
+
+.cell-text {
+  font-size: 30rpx;
+  color: #222;
+}
+
+.cell.selected .cell-text {
+  color: #fff;
+  font-weight: 600;
+}
+
+.card {
+  margin-top: 18rpx;
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 18rpx;
+  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.06);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+}
+
+.label {
+  width: 190rpx;
+  color: #333;
+  font-weight: 600;
+}
+
+.input {
+  flex: 1;
+  text-align: right;
+  padding: 8rpx 10rpx;
+  background: #f7f8fb;
+  border-radius: 12rpx;
+}
+
+.result-card {
+  padding-top: 16rpx;
+}
+
+.result-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.result-title {
+  font-weight: 700;
+  font-size: 30rpx;
+}
+
+.result-amount {
+  font-weight: 800;
+  font-size: 40rpx;
+  color: #07c160;
+}
+
+.result-formula {
+  font-size: 24rpx;
+}
+
+.selectedbar {
+  margin-top: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.selected-list {
+  max-height: 320rpx;
+}
+
+.selected-item {
+  padding: 10rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.selected-empty {
+  padding: 16rpx 0;
+  text-align: center;
+}
+
+.status {
+  margin-top: 18rpx;
+  text-align: center;
+  font-size: 24rpx;
+}

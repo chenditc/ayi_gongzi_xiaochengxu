@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>日历页面及工资计算器</title>
+  <!-- 引入 Bootstrap 5 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdmirror.com/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      padding-top: 20px;
+    }
+    .container-custom {
+      max-width: 800px;
+    }
+    .calendar-table td, .calendar-table th {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .calendar-table input[type="checkbox"] {
+      margin-right: 5px;
+    }
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1050;
+    }
+  </style>
+</head>
+<body>
+  <div class="container container-custom">
+    <!-- Toast 提示容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- 月份切换与批量选择 -->
+    <div class="mb-4 text-center">
+      <button id="prevMonth" class="btn btn-primary me-2">上一月</button>
+      <span id="currentMonthYear" class="h4"></span>
+      <button id="nextMonth" class="btn btn-primary ms-2">下一月</button>
+    </div>
+    <div class="mb-4 text-center">
+      <button id="selectAll" class="btn btn-secondary me-2">全选当前月</button>
+      <button id="deselectAll" class="btn btn-secondary me-2">取消当前月</button>
+      <button id="clearStorage" class="btn btn-warning">清除保存的数据</button>
+    </div>
+    
+    <!-- 日历显示区 -->
+    <div id="calendar" class="mb-4"></div>
+    
+    <!-- 已选日期列表 -->
+    <div id="selectedDates" class="mb-4" hidden="true" ></div>
+    
+    <!-- 输入项：月薪和每月应上工天数 -->
+    <div class="row mb-4">
+      <div class="col-md-6">
+        <label for="monthlySalary" class="form-label">月薪：</label>
+        <input type="number" id="monthlySalary" class="form-control" value="8000" min="0">
+      </div>
+      <div class="col-md-6">
+        <label for="workDays" class="form-label">每月应上工天数：</label>
+        <input type="number" id="workDays" class="form-control" value="26" min="0">
+      </div>
+    </div>
+    
+    <!-- 工资计算器显示区 -->
+    <div id="salaryCalculator" class="alert alert-info"></div>
+    
+    <!-- 存储状态显示 -->
+    <div class="text-muted small text-center mt-3">
+      <span id="storageStatus">数据自动保存在本地浏览器中</span>
+    </div>
+  </div>
+
+  <script>
+    // 当前显示的年份和月份（0-11）
+    let currentDate = new Date();
+    let currentYear = currentDate.getFullYear();
+    let currentMonth = currentDate.getMonth();
+
+    // 用于存储所有勾选的日期（格式：YYYY-MM-DD）
+    let selectedDates = new Set();
+    // 定义星期的中文名称
+    const weekdayNames = ["日", "一", "二", "三", "四", "五", "六"];
+
+    // localStorage 键名
+    const STORAGE_KEYS = {
+      selectedDates: 'salaryCalculator_selectedDates',
+      monthlySalary: 'salaryCalculator_monthlySalary',
+      workDays: 'salaryCalculator_workDays',
+      version: 'salaryCalculator_version' // 用于版本控制
+    };
+
+    // 当前数据版本
+    const CURRENT_VERSION = '1.0';
+
+    // 默认值
+    const DEFAULT_VALUES = {
+      monthlySalary: 8000,
+      workDays: 26
+    };
+
+    // 显示提示信息
+    function showToast(message, type = 'info') {
+      const toastContainer = document.getElementById('toastContainer');
+      const toastId = 'toast-' + Date.now();
+      const bgClass = type === 'error' ? 'bg-danger' : type === 'success' ? 'bg-success' : 'bg-info';
+      
+      const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">
+              ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        </div>
+      `;
+      
+      toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+      const toastElement = document.getElementById(toastId);
+      const toast = new bootstrap.Toast(toastElement, { delay: 3000 });
+      toast.show();
+      
+      // 自动移除已隐藏的 toast
+      toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+      });
+    }
+
+    // 验证日期格式
+    function isValidDateString(dateStr) {
+      const regex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!regex.test(dateStr)) return false;
+      
+      const date = new Date(dateStr);
+      return date instanceof Date && !isNaN(date);
+    }
+
+    // 验证数字
+    function isValidNumber(value, min = 0, max = Infinity) {
+      const num = Number(value);
+      return !isNaN(num) && num >= min && num <= max;
+    }
+
+    // 保存数据到 localStorage
+    function saveToStorage() {
+      try {
+        // 保存版本号
+        localStorage.setItem(STORAGE_KEYS.version, CURRENT_VERSION);
+        
+        // 保存选中的日期
+        const datesArray = Array.from(selectedDates);
+        localStorage.setItem(STORAGE_KEYS.selectedDates, JSON.stringify(datesArray));
+        
+        // 保存月薪
+        const salary = document.getElementById('monthlySalary').value;
+        if (isValidNumber(salary, 0)) {
+          localStorage.setItem(STORAGE_KEYS.monthlySalary, salary);
+        }
+        
+        // 保存应上工天数
+        const days = document.getElementById('workDays').value;
+        if (isValidNumber(days, 0, 31)) {
+          localStorage.setItem(STORAGE_KEYS.workDays, days);
+        }
+        
+        updateStorageStatus('数据已保存 ' + new Date().toLocaleTimeString());
+      } catch (e) {
+        console.error('保存数据失败:', e);
+        showToast('保存数据失败: ' + e.message, 'error');
+        updateStorageStatus('保存失败', 'text-danger');
+      }
+    }
+
+    // 从 localStorage 加载数据
+    function loadFromStorage() {
+      try {
+        // 检查版本
+        const savedVersion = localStorage.getItem(STORAGE_KEYS.version);
+        if (savedVersion && savedVersion !== CURRENT_VERSION) {
+          console.warn('数据版本不匹配，可能需要迁移');
+          // 这里可以添加数据迁移逻辑
+        }
+
+        // 加载选中的日期
+        const savedDates = localStorage.getItem(STORAGE_KEYS.selectedDates);
+        if (savedDates) {
+          try {
+            const datesArray = JSON.parse(savedDates);
+            if (Array.isArray(datesArray)) {
+              // 验证每个日期
+              const validDates = datesArray.filter(isValidDateString);
+              if (validDates.length !== datesArray.length) {
+                console.warn('部分日期数据无效已被忽略');
+                showToast('检测到部分无效日期数据，已自动修复', 'warning');
+              }
+              selectedDates = new Set(validDates);
+            } else {
+              throw new Error('日期数据格式错误');
+            }
+          } catch (e) {
+            console.error('解析日期数据失败:', e);
+            showToast('日期数据损坏，已重置', 'error');
+            selectedDates = new Set();
+          }
+        }
+
+        // 加载月薪
+        const savedSalary = localStorage.getItem(STORAGE_KEYS.monthlySalary);
+        if (savedSalary !== null) {
+          if (isValidNumber(savedSalary, 0)) {
+            document.getElementById('monthlySalary').value = savedSalary;
+          } else {
+            console.warn('月薪数据无效，使用默认值');
+            document.getElementById('monthlySalary').value = DEFAULT_VALUES.monthlySalary;
+          }
+        }
+
+        // 加载应上工天数
+        const savedWorkDays = localStorage.getItem(STORAGE_KEYS.workDays);
+        if (savedWorkDays !== null) {
+          if (isValidNumber(savedWorkDays, 0, 31)) {
+            document.getElementById('workDays').value = savedWorkDays;
+          } else {
+            console.warn('工作天数数据无效，使用默认值');
+            document.getElementById('workDays').value = DEFAULT_VALUES.workDays;
+          }
+        }
+
+        updateStorageStatus('数据已从本地加载');
+        showToast('数据加载成功', 'success');
+      } catch (e) {
+        console.error('加载数据失败:', e);
+        showToast('加载数据失败，使用默认值', 'error');
+        updateStorageStatus('加载失败，使用默认值', 'text-danger');
+      }
+    }
+
+    // 清除所有保存的数据
+    function clearStorage() {
+      if (confirm('确定要清除所有保存的数据吗？此操作不可恢复。')) {
+        try {
+          Object.values(STORAGE_KEYS).forEach(key => {
+            localStorage.removeItem(key);
+          });
+          
+          // 重置到默认状态
+          selectedDates = new Set();
+          document.getElementById('monthlySalary').value = DEFAULT_VALUES.monthlySalary;
+          document.getElementById('workDays').value = DEFAULT_VALUES.workDays;
+          
+          // 重新生成日历
+          generateCalendar(currentYear, currentMonth);
+          updateSelectedList();
+          
+          showToast('数据已清除', 'success');
+          updateStorageStatus('数据已清除');
+        } catch (e) {
+          console.error('清除数据失败:', e);
+          showToast('清除数据失败: ' + e.message, 'error');
+        }
+      }
+    }
+
+    // 更新存储状态显示
+    function updateStorageStatus(message, className = 'text-muted') {
+      const statusElement = document.getElementById('storageStatus');
+      statusElement.textContent = message;
+      statusElement.className = 'small text-center mt-3 ' + className;
+    }
+
+    // 生成日历表格，包含 header（带复选框）和日期格
+    function generateCalendar(year, month) {
+      // 显示当前的年月
+      const currentMonthYearSpan = document.getElementById('currentMonthYear');
+      currentMonthYearSpan.textContent = year + '年 ' + (month + 1) + '月';
+
+      let calendarDiv = document.getElementById('calendar');
+      let firstDay = new Date(year, month, 1);
+      let startingDay = firstDay.getDay(); // 0代表星期日
+      let daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      // 构建表格头部，每一列增加 header 复选框
+      let html = '<table class="table table-bordered calendar-table"><thead><tr>';
+      for (let i = 0; i < 7; i++) {
+        html += `<th>
+                   <div class="form-check">
+                     <input class="form-check-input header-checkbox" type="checkbox" id="header-col-${i}" data-col="${i}">
+                     <label class="form-check-label" for="header-col-${i}">${weekdayNames[i]}</label>
+                   </div>
+                 </th>`;
+      }
+      html += '</tr></thead><tbody>';
+
+      let date = 1;
+      // 最多6行日历
+      for (let i = 0; i < 6; i++) {
+        html += '<tr>';
+        for (let j = 0; j < 7; j++) {
+          if (i === 0 && j < startingDay) {
+            html += '<td></td>';
+          } else if (date > daysInMonth) {
+            html += '<td></td>';
+          } else {
+            let monthStr = (month + 1).toString().padStart(2, '0');
+            let dateStr = date.toString().padStart(2, '0');
+            let fullDateStr = year + '-' + monthStr + '-' + dateStr;
+            let checked = selectedDates.has(fullDateStr) ? 'checked' : '';
+            html += '<td>';
+            html += `<div class="form-check">
+                       <input class="form-check-input day-checkbox" type="checkbox" id="date-${fullDateStr}" ${checked} data-date="${fullDateStr}">
+                       <label class="form-check-label" for="date-${fullDateStr}">${date}</label>
+                     </div>`;
+            html += '</td>';
+            date++;
+          }
+        }
+        html += '</tr>';
+        if (date > daysInMonth) break;
+      }
+      html += '</tbody></table>';
+      calendarDiv.innerHTML = html;
+
+      // 为所有日期复选框绑定事件监听
+      let dayCheckboxes = calendarDiv.querySelectorAll('input.day-checkbox');
+      dayCheckboxes.forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+          let d = this.getAttribute('data-date');
+          if (this.checked) {
+            selectedDates.add(d);
+          } else {
+            selectedDates.delete(d);
+          }
+          updateSelectedList();
+          saveToStorage(); // 保存更改
+        });
+      });
+
+      // 为 header 复选框绑定事件：切换整列
+      let headerCheckboxes = calendarDiv.querySelectorAll('input.header-checkbox');
+      headerCheckboxes.forEach(function(headerCheckbox) {
+        headerCheckbox.addEventListener('change', function() {
+          let colIndex = parseInt(this.getAttribute('data-col'));
+          let checked = this.checked;
+          // 遍历所有行，处理对应列的复选框
+          let rows = calendarDiv.querySelectorAll('tbody tr');
+          rows.forEach(function(row) {
+            let cells = row.querySelectorAll('td');
+            if (cells.length > colIndex) {
+              let cell = cells[colIndex];
+              let checkbox = cell.querySelector('input.day-checkbox');
+              if (checkbox) {
+                checkbox.checked = checked;
+                let d = checkbox.getAttribute('data-date');
+                if (checked) {
+                  selectedDates.add(d);
+                } else {
+                  selectedDates.delete(d);
+                }
+              }
+            }
+          });
+          updateSelectedList();
+          saveToStorage(); // 保存更改
+        });
+      });
+    }
+
+    // 更新已选日期列表和工资计算器
+    function updateSelectedList() {
+      let selectedDiv = document.getElementById('selectedDates');
+      let selectedArray = Array.from(selectedDates);
+      selectedArray.sort();
+      let html = '<h4>已选日期</h4>';
+      html += '<ul class="list-group">';
+      selectedArray.forEach(function(dateStr) {
+        try {
+          let dateObj = new Date(dateStr);
+          if (!isNaN(dateObj)) {
+            let weekday = weekdayNames[dateObj.getDay()];
+            html += '<li class="list-group-item">' + dateStr + ' 星期' + weekday + '</li>';
+          }
+        } catch (e) {
+          console.error('无效日期:', dateStr);
+        }
+      });
+      html += '</ul>';
+      html += '<p class="mt-2">总共选择：' + selectedArray.length + ' 天</p>';
+      selectedDiv.innerHTML = html;
+
+      // 计算工资
+      let monthlySalary = parseFloat(document.getElementById('monthlySalary').value) || 0;
+      let workDays = parseFloat(document.getElementById('workDays').value) || 0;
+      let x = selectedArray.length;
+      let y = workDays === 0 ? 0 : (x / workDays * monthlySalary);
+      
+      let salaryHtml = `<h4>月应结工资计算器</h4>
+                        <p>${x} / ${workDays} * ${monthlySalary} = ${y.toFixed(2)}</p>`;
+      document.getElementById('salaryCalculator').innerHTML = salaryHtml;
+    }
+
+    // 批量选择当前月：选中当前月所有日期
+    function selectAllCurrentMonth() {
+      let daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        let monthStr = (currentMonth + 1).toString().padStart(2, '0');
+        let dateStr = d.toString().padStart(2, '0');
+        let fullDateStr = currentYear + '-' + monthStr + '-' + dateStr;
+        selectedDates.add(fullDateStr);
+      }
+      generateCalendar(currentYear, currentMonth);
+      updateSelectedList();
+      saveToStorage(); // 保存更改
+    }
+
+    // 批量取消当前月所有日期
+    function deselectAllCurrentMonth() {
+      let daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        let monthStr = (currentMonth + 1).toString().padStart(2, '0');
+        let dateStr = d.toString().padStart(2, '0');
+        let fullDateStr = currentYear + '-' + monthStr + '-' + dateStr;
+        selectedDates.delete(fullDateStr);
+      }
+      generateCalendar(currentYear, currentMonth);
+      updateSelectedList();
+      saveToStorage(); // 保存更改
+    }
+
+    // 月份切换事件
+    document.getElementById('prevMonth').addEventListener('click', function() {
+      currentMonth--;
+      if (currentMonth < 0) {
+        currentMonth = 11;
+        currentYear--;
+      }
+      generateCalendar(currentYear, currentMonth);
+      updateSelectedList();
+    });
+
+    document.getElementById('nextMonth').addEventListener('click', function() {
+      currentMonth++;
+      if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
+      }
+      generateCalendar(currentYear, currentMonth);
+      updateSelectedList();
+    });
+
+    // 批量选择按钮事件
+    document.getElementById('selectAll').addEventListener('click', selectAllCurrentMonth);
+    document.getElementById('deselectAll').addEventListener('click', deselectAllCurrentMonth);
+    document.getElementById('clearStorage').addEventListener('click', clearStorage);
+
+    // 当月薪或工作天数变化时更新工资计算器并保存
+    document.getElementById('monthlySalary').addEventListener('input', function() {
+      // 验证输入
+      if (isValidNumber(this.value, 0)) {
+        updateSelectedList();
+        saveToStorage();
+      } else {
+        showToast('请输入有效的月薪数字', 'error');
+      }
+    });
+    
+    document.getElementById('workDays').addEventListener('input', function() {
+      // 验证输入
+      if (isValidNumber(this.value, 0, 31)) {
+        updateSelectedList();
+        saveToStorage();
+      } else {
+        showToast('请输入有效的工作天数（0-31）', 'error');
+      }
+    });
+
+    // 检测 localStorage 是否可用
+    function checkLocalStorageAvailable() {
+      try {
+        const test = '__localStorage_test__';
+        localStorage.setItem(test, test);
+        localStorage.removeItem(test);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // 页面加载时，先加载保存的数据，然后初始化日历和显示
+    window.addEventListener('load', function() {
+      if (!checkLocalStorageAvailable()) {
+        showToast('浏览器不支持本地存储，数据将无法保存', 'error');
+        updateStorageStatus('本地存储不可用', 'text-danger');
+      } else {
+        loadFromStorage(); // 加载保存的数据
+      }
+      generateCalendar(currentYear, currentMonth);
+      updateSelectedList();
+    });
+
+    // 页面卸载前尝试保存数据
+    window.addEventListener('beforeunload', function() {
+      saveToStorage();
+    });
+  </script>
+
+  <!-- 引入 Bootstrap 5 JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

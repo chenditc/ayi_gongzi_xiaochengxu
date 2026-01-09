@@ -1,0 +1,19 @@
+{
+  "description": "日历工资计算小程序（无后端）",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.5.7",
+  "appid": "touristappid",
+  "projectname": "ayi_gongzi_xiaochengxu",
+  "miniprogramRoot": "./",
+  "condition": {}
+}

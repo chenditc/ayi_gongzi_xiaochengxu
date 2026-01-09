@@ -1,0 +1,18 @@
+page {
+  background: #f6f7fb;
+  color: #222;
+  font-size: 28rpx;
+  line-height: 1.4;
+}
+
+view,
+scroll-view,
+text,
+button,
+input {
+  box-sizing: border-box;
+}
+
+.muted {
+  color: #7a7a7a;
+}
