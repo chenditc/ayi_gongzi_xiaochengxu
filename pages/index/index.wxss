@@ -87,10 +87,20 @@
   justify-content: center;
   border-radius: 14rpx;
   margin: 4rpx 0;
+  position: relative;
 }
 
 .cell.empty {
   background: #eef0f5;
+}
+
+.cell.holiday {
+  background: #fff7f0;
+}
+
+.cell.holiday .cell-text {
+  color: #d9480f;
+  font-weight: 700;
 }
 
 .cell.selected {
@@ -105,6 +115,57 @@
 .cell.selected .cell-text {
   color: #fff;
   font-weight: 600;
+}
+
+.cell.selected.holiday .cell-text {
+  color: #fff;
+}
+
+.badge-holiday {
+  position: absolute;
+  right: 10rpx;
+  top: 8rpx;
+  font-size: 20rpx;
+  line-height: 22rpx;
+  padding: 2rpx 6rpx;
+  border-radius: 8rpx;
+  background: #e8590c;
+  color: #fff;
+  font-weight: 800;
+}
+
+.holiday-name {
+  position: absolute;
+  left: 8rpx;
+  bottom: 6rpx;
+  font-size: 18rpx;
+  color: #e8590c;
+  max-width: 110rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell.selected .holiday-name {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.cell.holiday-worked {
+  box-shadow: 0 0 0 4rpx rgba(134, 46, 156, 0.6) inset;
+}
+
+.cell.selected.holiday-worked {
+  background: #862e9c;
+}
+
+.cell.selected.holiday-worked .cell-text {
+  color: #fff;
+  font-weight: 700;
+}
+
+.cell.selected.holiday-worked .badge-holiday {
+  background: rgba(255, 255, 255, 0.92);
+  color: #862e9c;
 }
 
 .card {
@@ -162,11 +223,22 @@
   font-size: 24rpx;
 }
 
+.result-breakdown {
+  display: block;
+  font-size: 24rpx;
+  margin-bottom: 8rpx;
+}
+
 .selectedbar {
   margin-top: 18rpx;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.selectedbar-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .selected-list {

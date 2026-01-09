@@ -6,6 +6,11 @@ const {
   parseWeekday,
 } = require('../../utils/date')
 const { loadState, saveState, clearState } = require('../../utils/storage')
+const {
+  isStatutoryHoliday,
+  getHolidayName,
+  listStatutoryHolidaysForMonth,
+} = require('../../utils/holidays')
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const WEEKDAY_LABELS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
@@ -36,6 +41,9 @@ function buildCalendar(year, monthIndex, selectedDatesMap) {
         dateStr: null,
         weekdayIndex: i % 7,
         selected: false,
+        isHoliday: false,
+        holidayName: '',
+        isHolidayWorked: false,
       })
       continue
     }
@@ -43,12 +51,17 @@ function buildCalendar(year, monthIndex, selectedDatesMap) {
     const day = i - firstWeekday + 1
     const dateStr = formatDateStr(year, monthIndex, day)
     const selected = !!(selectedDatesMap && selectedDatesMap[dateStr])
+    const isHoliday = isStatutoryHoliday(dateStr)
+    const holidayName = isHoliday ? getHolidayName(dateStr) : ''
     cells.push({
       empty: false,
       day,
       dateStr,
       weekdayIndex: i % 7,
       selected,
+      isHoliday,
+      holidayName,
+      isHolidayWorked: isHoliday && selected,
     })
   }
 
@@ -74,25 +87,37 @@ function computeWeekdayColumnAllSelected(cells) {
   return res
 }
 
-function buildSelectedDatesDisplay(selectedDatesMap) {
-  const keys = Object.keys(selectedDatesMap || {}).filter((k) => selectedDatesMap[k])
+function buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex) {
+  const prefix = `${year}-${pad2(monthIndex + 1)}-`
+  const keys = Object.keys(selectedDatesMap || {})
+    .filter((k) => selectedDatesMap[k])
+    .filter((k) => k.startsWith(prefix))
   keys.sort()
   return keys.map((dateStr) => {
     const wd = parseWeekday(dateStr)
+    const isHoliday = isStatutoryHoliday(dateStr)
+    const holidayName = isHoliday ? getHolidayName(dateStr) : ''
+    const tag = isHoliday ? '节假日加班' : '工作日上工'
+    const holidayPart = holidayName ? ` ${holidayName}` : ''
     return {
       dateStr,
       weekdayLabel: wd == null ? '' : WEEKDAY_LABELS[wd],
+      isHoliday,
+      holidayName,
+      tag,
+      displayText: `${dateStr} ${wd == null ? '' : WEEKDAY_LABELS[wd]}${holidayPart}（${tag}）`,
     }
   })
 }
 
-function computeSalaryResult(selectedCount, monthlySalary, workDays) {
+function computeSalaryResult(workedCount, holidayPaidCount, holidayWorkedCount, monthlySalary, workDays) {
   const salary = Number(monthlySalary) || 0
   const workRaw = Number(workDays) || 0
   const work = clampInt(workRaw, 0, 31)
-  const result = work > 0 ? (selectedCount / work) * salary : 0
+  const payUnits = (Number(workedCount) || 0) + (Number(holidayPaidCount) || 0) + 2 * (Number(holidayWorkedCount) || 0)
+  const result = work > 0 ? (payUnits / work) * salary : 0
   const salaryResultText = Number.isFinite(result) ? result.toFixed(2) : '0.00'
-  const resultText = `${selectedCount} / ${work} * ${salary} = ${salaryResultText}`
+  const resultText = `预估工资 = (工作日上工${workedCount}天 + 法定节假日带薪${holidayPaidCount}天 + 节假日加班${holidayWorkedCount}天×2) / 应出勤${work}天 × 月薪${salary} = ${salaryResultText}`
   return { salaryResult: result, salaryResultText, resultText, workDaysClamped: String(work) }
 }
 
@@ -106,10 +131,14 @@ Page({
     selectedDatesMap: {},
     monthlySalary: '8000',
     workDays: '26',
-    selectedCount: 0,
+    workedCount: 0,
+    holidayPaidCount: 0,
+    holidayWorkedCount: 0,
+    payUnits: 0,
     salaryResult: 0,
     salaryResultText: '0.00',
-    resultText: '0 / 26 * 8000 = 0.00',
+    resultText:
+      '预估工资 = (工作日上工0天 + 法定节假日带薪0天 + 节假日加班0天×2) / 应出勤26天 × 月薪8000 = 0.00',
     weekdayColumnAllSelected: [false, false, false, false, false, false, false],
     storageStatus: '未保存',
     showSelectedList: false,
@@ -117,6 +146,7 @@ Page({
   },
 
   _workDaysRawLast: null,
+  _holidayWorkToastShown: false,
 
   onLoad() {
     const today = new Date()
@@ -172,10 +202,31 @@ Page({
     const workDays = partial.workDays != null ? partial.workDays : this.data.workDays
 
     const calendarCells = buildCalendar(year, monthIndex, selectedDatesMap)
-    const selectedCount = Object.keys(selectedDatesMap || {}).filter((k) => selectedDatesMap[k]).length
-    const salaryComputed = computeSalaryResult(selectedCount, monthlySalary, workDays)
+    const holidayList = listStatutoryHolidaysForMonth(year, monthIndex)
+    const holidaySet = Object.create(null)
+    for (const h of holidayList) holidaySet[h.dateStr] = true
+    const holidayPaidCount = holidayList.length
+
+    const monthPrefix = `${year}-${pad2(monthIndex + 1)}-`
+    let holidayWorkedCount = 0
+    let workedCount = 0
+    for (const dateStr of Object.keys(selectedDatesMap || {})) {
+      if (!selectedDatesMap[dateStr]) continue
+      if (!dateStr.startsWith(monthPrefix)) continue
+      if (holidaySet[dateStr]) holidayWorkedCount += 1
+      else workedCount += 1
+    }
+    const payUnits = workedCount + holidayPaidCount + 2 * holidayWorkedCount
+
+    const salaryComputed = computeSalaryResult(
+      workedCount,
+      holidayPaidCount,
+      holidayWorkedCount,
+      monthlySalary,
+      workDays
+    )
     const weekdayColumnAllSelected = computeWeekdayColumnAllSelected(calendarCells)
-    const selectedDatesDisplay = buildSelectedDatesDisplay(selectedDatesMap)
+    const selectedDatesDisplay = buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex)
 
     const patch = {
       ...partial,
@@ -183,9 +234,12 @@ Page({
       monthIndex,
       monthIndexPlus1: monthIndex + 1,
       monthlySalary,
-      workDays,
+      workDays: workDays === '' ? '' : salaryComputed.workDaysClamped,
       calendarCells,
-      selectedCount,
+      workedCount,
+      holidayPaidCount,
+      holidayWorkedCount,
+      payUnits,
       salaryResult: salaryComputed.salaryResult,
       salaryResultText: salaryComputed.salaryResultText,
       resultText: salaryComputed.resultText,
@@ -224,9 +278,20 @@ Page({
   onToggleDay(e) {
     const dateStr = e.currentTarget.dataset.datestr
     if (!dateStr) return
+    const wasSelected = !!(this.data.selectedDatesMap && this.data.selectedDatesMap[dateStr])
     const next = { ...(this.data.selectedDatesMap || {}) }
     if (next[dateStr]) delete next[dateStr]
     else next[dateStr] = true
+
+    if (!wasSelected && isStatutoryHoliday(dateStr) && !this._holidayWorkToastShown) {
+      this._holidayWorkToastShown = true
+      wx.showToast({
+        title: '已按节假日加班(额外×2)计入',
+        icon: 'none',
+        duration: 2000,
+      })
+    }
+
     this._applyState({ selectedDatesMap: next }, { save: true })
   },
 

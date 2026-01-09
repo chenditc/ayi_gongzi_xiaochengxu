@@ -31,11 +31,13 @@
       <view
         wx:for="{{calendarCells}}"
         wx:key="index"
-        class="cell {{item.empty ? 'empty' : ''}} {{item.selected ? 'selected' : ''}}"
+        class="cell {{item.empty ? 'empty' : ''}} {{item.selected ? 'selected' : ''}} {{item.isHoliday ? 'holiday' : ''}} {{item.isHolidayWorked ? 'holiday-worked' : ''}}"
         bindtap="onToggleDay"
         data-datestr="{{item.dateStr}}"
       >
+        <text wx:if="{{item.isHoliday}}" class="badge-holiday">法</text>
         <text class="cell-text">{{item.empty ? '' : item.day}}</text>
+        <text wx:if="{{item.isHoliday && item.holidayName}}" class="holiday-name">{{item.holidayName}}</text>
       </view>
     </view>
   </view>
@@ -69,14 +71,18 @@
       <text class="result-title">计算结果</text>
       <text class="result-amount">￥{{salaryResultText}}</text>
     </view>
+    <text class="muted result-breakdown">
+      工作日上工 {{workedCount}} 天 + 法定节假日(带薪) {{holidayPaidCount}} 天 + 节假日加班 {{holidayWorkedCount}} 天(额外×2) = 计薪单位 {{payUnits}} 天
+    </text>
     <text class="muted result-formula">{{resultText}}</text>
   </view>
 
   <view class="selectedbar">
-    <text>已选 {{selectedCount}} 天</text>
-    <button class="btn mini" size="mini" bindtap="onToggleSelectedList">
-      {{showSelectedList ? '隐藏明细' : '显示明细'}}
-    </button>
+    <view class="selectedbar-actions">
+      <button class="btn mini" size="mini" bindtap="onToggleSelectedList">
+        {{showSelectedList ? '隐藏明细' : '显示明细'}}
+      </button>
+    </view>
   </view>
 
   <view wx:if="{{showSelectedList}}" class="card">
@@ -86,7 +92,7 @@
         wx:for="{{selectedDatesDisplay}}"
         wx:key="dateStr"
       >
-        <text>{{item.dateStr}} {{item.weekdayLabel}}</text>
+        <text>{{item.displayText}}</text>
       </view>
       <view wx:if="{{selectedDatesDisplay.length == 0}}" class="selected-empty muted">
         <text>暂无选择</text>
