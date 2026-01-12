@@ -21,6 +21,13 @@ const {
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const WEEKDAY_LABELS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 
+const GUIDE_SEEN_KEY = 'ayi_calendar_salary_guide_seen'
+const GUIDE_STEPS = [
+  { selector: '#calendarArea', text: '点击选择上工的日期，自动计算工资' },
+  { selector: '#weekHeader', text: '点击这里，批量选择或取消' },
+  { selector: '#shareBtn', text: '点击这里，发送本页内容给其他人' },
+]
+
 function nowTimeText() {
   const d = new Date()
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
@@ -149,6 +156,16 @@ Page({
     storageStatus: '未保存',
     showSelectedList: false,
     selectedDatesDisplay: [],
+
+    // First-time guide (coach marks)
+    guideVisible: false,
+    guideStep: 0,
+    guideText: '',
+    guideButtonText: '',
+    guideRect: { left: 0, top: 0, width: 0, height: 0 }, // px
+    guideMask: { top: '', left: '', right: '', bottom: '' }, // style strings
+    guideTipStyle: '',
+    guideViewport: { w: 0, h: 0 },
   },
 
   _workDaysRawLast: null,
@@ -204,6 +221,7 @@ Page({
         { save: true }
       )
       this.setData({ storageStatus: `已从分享加载并保存 ${nowTimeText()}` })
+      wx.nextTick(() => this._maybeShowGuide())
       return
     }
 
@@ -220,6 +238,142 @@ Page({
       },
       { save: false }
     )
+    wx.nextTick(() => this._maybeShowGuide())
+  },
+
+  _getViewport() {
+    let info = null
+    try {
+      info = wx.getSystemInfoSync()
+    } catch (e) {}
+    const w = (info && Number(info.windowWidth)) || 375
+    const h = (info && Number(info.windowHeight)) || 667
+    const viewport = { w, h }
+    this.setData({ guideViewport: viewport })
+    return viewport
+  },
+
+  _measureTargetRect(targetSelector) {
+    return new Promise((resolve) => {
+      try {
+        wx.createSelectorQuery()
+          .in(this)
+          .select(targetSelector)
+          .boundingClientRect()
+          .exec((res) => resolve((res && res[0]) || null))
+      } catch (e) {
+        resolve(null)
+      }
+    })
+  },
+
+  _computeGuideLayout(rect, viewport) {
+    const vw = viewport && Number(viewport.w) ? viewport.w : 375
+    const vh = viewport && Number(viewport.h) ? viewport.h : 667
+
+    const r =
+      rect && Number.isFinite(rect.left) && Number.isFinite(rect.top) && Number.isFinite(rect.width)
+        ? rect
+        : {
+            left: Math.max(12, Math.floor((vw - 200) / 2)),
+            top: Math.max(12, Math.floor((vh - 80) / 2)),
+            width: Math.min(200, vw - 24),
+            height: 80,
+          }
+
+    const pad = 6
+    const left = Math.max(0, Math.floor(r.left - pad))
+    const top = Math.max(0, Math.floor(r.top - pad))
+    const right = Math.min(vw, Math.ceil(r.left + r.width + pad))
+    const bottom = Math.min(vh, Math.ceil(r.top + r.height + pad))
+    const width = Math.max(0, right - left)
+    const height = Math.max(0, bottom - top)
+
+    const spot = { left, top, width, height }
+
+    const maskTopH = Math.max(0, top)
+    const maskBottomTop = Math.max(0, top + height)
+    const maskBottomH = Math.max(0, vh - maskBottomTop)
+    const maskLeftW = Math.max(0, left)
+    const maskRightLeft = Math.max(0, left + width)
+    const maskRightW = Math.max(0, vw - maskRightLeft)
+
+    const guideMask = {
+      top: `left:0px;top:0px;width:${vw}px;height:${maskTopH}px;`,
+      left: `left:0px;top:${top}px;width:${maskLeftW}px;height:${height}px;`,
+      right: `left:${maskRightLeft}px;top:${top}px;width:${maskRightW}px;height:${height}px;`,
+      bottom: `left:0px;top:${maskBottomTop}px;width:${vw}px;height:${maskBottomH}px;`,
+    }
+
+    // Tip positioning (simple estimate, px)
+    const tipWidth = Math.max(0, Math.min(320, vw - 24))
+    const tipHeightEst = 130
+    const preferBelowTop = bottom + 12
+    let tipTop = preferBelowTop
+    if (preferBelowTop + tipHeightEst > vh) {
+      tipTop = Math.max(12, top - tipHeightEst - 12)
+    }
+    tipTop = Math.min(Math.max(12, tipTop), Math.max(12, vh - tipHeightEst - 12))
+
+    const centerX = left + width / 2
+    let tipLeft = Math.floor(centerX - tipWidth / 2)
+    tipLeft = Math.min(Math.max(12, tipLeft), Math.max(12, vw - tipWidth - 12))
+
+    const guideTipStyle = `left:${tipLeft}px;top:${tipTop}px;width:${tipWidth}px;`
+
+    return { guideRect: spot, guideMask, guideTipStyle }
+  },
+
+  _renderGuideStep(stepIndex) {
+    const idx = Number(stepIndex)
+    if (!Number.isFinite(idx) || idx < 0 || idx >= GUIDE_STEPS.length) return
+
+    const step = GUIDE_STEPS[idx]
+    this.setData({
+      guideStep: idx,
+      guideText: step.text,
+      guideButtonText: idx === GUIDE_STEPS.length - 1 ? '知道了' : '下一步',
+    })
+
+    wx.nextTick(() => {
+      if (!this.data.guideVisible) return
+      const viewport =
+        this.data.guideViewport && this.data.guideViewport.w
+          ? this.data.guideViewport
+          : this._getViewport()
+
+      this._measureTargetRect(step.selector).then((rect) => {
+        const layout = this._computeGuideLayout(rect, viewport)
+        this.setData(layout)
+      })
+    })
+  },
+
+  _maybeShowGuide() {
+    let seen = false
+    try {
+      seen = !!wx.getStorageSync(GUIDE_SEEN_KEY)
+    } catch (e) {}
+    if (seen) return
+    if (this.data.guideVisible) return
+
+    this._getViewport()
+    this.setData({ guideVisible: true })
+    this._renderGuideStep(0)
+  },
+
+  onGuideCatch() {},
+
+  onGuideNext() {
+    const cur = Number(this.data.guideStep) || 0
+    if (cur < GUIDE_STEPS.length - 1) {
+      this._renderGuideStep(cur + 1)
+      return
+    }
+    try {
+      wx.setStorageSync(GUIDE_SEEN_KEY, '1')
+    } catch (e) {}
+    this.setData({ guideVisible: false })
   },
 
   _applyState(partial, opts) {

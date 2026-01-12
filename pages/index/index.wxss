@@ -305,3 +305,53 @@
   font-size: 24rpx;
 }
 
+.guide {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+}
+
+.guide-mask {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1;
+}
+
+.guide-spot {
+  position: fixed;
+  border: 3px solid #07c160;
+  border-radius: 16rpx;
+  box-shadow: 0 0 0 6rpx rgba(7, 193, 96, 0.25);
+  z-index: 2;
+}
+
+.guide-tip {
+  position: fixed;
+  width: 560rpx;
+  max-width: calc(100vw - 48rpx);
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 18rpx;
+  box-shadow: 0 10rpx 28rpx rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+
+.guide-tip-text {
+  font-size: 28rpx;
+  color: #111;
+  line-height: 1.5;
+}
+
+.guide-tip-actions {
+  margin-top: 16rpx;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.guide-tip-btn {
+  min-width: 160rpx;
+}
+

@@ -13,8 +13,8 @@
     <button class="btn mini danger" size="mini" bindtap="onClearStorage">重新选择</button>
   </view>
 
-  <view class="calendar">
-    <view class="week-header">
+  <view class="calendar" id="calendarArea">
+    <view class="week-header" id="weekHeader">
       <view
         class="week-cell"
         wx:for="{{weekdays}}"
@@ -71,7 +71,7 @@
       <text class="result-title">计算结果</text>
       <view class="result-right">
         <text class="result-amount">￥{{salaryResultText}}</text>
-        <button class="btn mini primary" size="mini" open-type="share">分享工资单</button>
+        <button class="btn mini primary" id="shareBtn" size="mini" open-type="share">分享工资单</button>
       </view>
     </view>
     <text class="muted result-breakdown">
@@ -105,5 +105,32 @@
 
   <view class="status muted">
     <text>{{storageStatus}}</text>
+  </view>
+
+  <view
+    wx:if="{{guideVisible}}"
+    class="guide"
+    catchtap="onGuideCatch"
+    catchtouchmove="onGuideCatch"
+  >
+    <view class="guide-mask" style="{{guideMask.top}}" catchtap="onGuideCatch"></view>
+    <view class="guide-mask" style="{{guideMask.left}}" catchtap="onGuideCatch"></view>
+    <view class="guide-mask" style="{{guideMask.right}}" catchtap="onGuideCatch"></view>
+    <view class="guide-mask" style="{{guideMask.bottom}}" catchtap="onGuideCatch"></view>
+
+    <view
+      class="guide-spot"
+      style="left:{{guideRect.left}}px;top:{{guideRect.top}}px;width:{{guideRect.width}}px;height:{{guideRect.height}}px;"
+      catchtap="onGuideCatch"
+    ></view>
+
+    <view class="guide-tip" style="{{guideTipStyle}}" catchtap="onGuideCatch">
+      <view class="guide-tip-text">{{guideText}}</view>
+      <view class="guide-tip-actions">
+        <button class="btn mini primary guide-tip-btn" size="mini" bindtap="onGuideNext">
+          {{guideButtonText}}
+        </button>
+      </view>
+    </view>
   </view>
 </view>
