@@ -11,6 +11,12 @@ const {
   getHolidayName,
   listStatutoryHolidaysForMonth,
 } = require('../../utils/holidays')
+const {
+  buildSharePath,
+  buildShareQuery,
+  parseSharedOptions,
+  replaceMonthSelection,
+} = require('../../utils/share')
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const WEEKDAY_LABELS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
@@ -148,10 +154,14 @@ Page({
   _workDaysRawLast: null,
   _holidayWorkToastShown: false,
 
-  onLoad() {
+  onLoad(options) {
+    try {
+      wx.showShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] })
+    } catch (e) {}
+
     const today = new Date()
-    const initYear = today.getFullYear()
-    const initMonthIndex = today.getMonth()
+    let initYear = today.getFullYear()
+    let initMonthIndex = today.getMonth()
 
     const loaded = loadState()
     const map = Object.create(null)
@@ -175,6 +185,27 @@ Page({
 
     const monthlySalary = loaded.monthlySalary !== '' ? loaded.monthlySalary : '8000'
     const workDays = loaded.workDays !== '' ? loaded.workDays : '26'
+
+    const shared = parseSharedOptions(options)
+    if (shared.ok) {
+      initYear = shared.year
+      initMonthIndex = shared.monthIndex
+      const merged = replaceMonthSelection(map, shared.year, shared.monthIndex, shared.selectedDatesMap)
+      const shareMonthlySalary = shared.monthlySalary !== '' ? shared.monthlySalary : monthlySalary
+      const shareWorkDays = shared.workDays !== '' ? shared.workDays : workDays
+      this._applyState(
+        {
+          year: initYear,
+          monthIndex: initMonthIndex,
+          selectedDatesMap: merged,
+          monthlySalary: shareMonthlySalary,
+          workDays: shareWorkDays,
+        },
+        { save: true }
+      )
+      this.setData({ storageStatus: `已从分享加载并保存 ${nowTimeText()}` })
+      return
+    }
 
     this._applyState(
       {
@@ -340,9 +371,9 @@ Page({
 
   onClearStorage() {
     wx.showModal({
-      title: '确认清空？',
-      content: '将清空已保存的选择日期、月薪和出勤天数。',
-      confirmText: '清空',
+      title: '重新选择？',
+      content: '会清空已保存的选择日期、月薪和应出勤天数，并恢复默认值。',
+      confirmText: '重新选择',
       confirmColor: '#e64646',
       success: (res) => {
         if (!res.confirm) return
@@ -352,11 +383,11 @@ Page({
             selectedDatesMap: {},
             monthlySalary: '8000',
             workDays: '26',
-            storageStatus: `已清空 ${nowTimeText()}`,
+            storageStatus: `已重置 ${nowTimeText()}`,
           },
           { save: false }
         )
-        wx.showToast({ title: '已清空', icon: 'success' })
+        wx.showToast({ title: '已重置', icon: 'success' })
       },
     })
   },
@@ -399,5 +430,29 @@ Page({
 
   onToggleSelectedList() {
     this.setData({ showSelectedList: !this.data.showSelectedList })
+  },
+
+  onShareAppMessage() {
+    const title = `${this.data.year}年${this.data.monthIndexPlus1}月工资单：￥${this.data.salaryResultText}`
+    const path = buildSharePath({
+      year: this.data.year,
+      monthIndex: this.data.monthIndex,
+      selectedDatesMap: this.data.selectedDatesMap,
+      monthlySalary: this.data.monthlySalary,
+      workDays: this.data.workDays,
+    })
+    return { title, path }
+  },
+
+  onShareTimeline() {
+    const title = `${this.data.year}年${this.data.monthIndexPlus1}月工资单：￥${this.data.salaryResultText}`
+    const query = buildShareQuery({
+      year: this.data.year,
+      monthIndex: this.data.monthIndex,
+      selectedDatesMap: this.data.selectedDatesMap,
+      monthlySalary: this.data.monthlySalary,
+      workDays: this.data.workDays,
+    })
+    return { title, query }
   },
 })

@@ -1,3 +1,5 @@
 {
-  "navigationBarTitleText": "日历工资计算"
+  "navigationBarTitleText": "日历工资计算",
+  "enableShareAppMessage": true,
+  "enableShareTimeline": true
 }

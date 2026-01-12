@@ -1,16 +1,16 @@
 <view class="page">
   <view class="monthbar">
-    <button class="btn mini" size="mini" bindtap="onPrevMonth">上月</button>
+    <button class="btn mini secondary" size="mini" bindtap="onPrevMonth">上月</button>
     <view class="monthtitle">
       <text class="monthtitle-text">{{year}}年{{monthIndexPlus1}}月</text>
     </view>
-    <button class="btn mini" size="mini" bindtap="onNextMonth">下月</button>
+    <button class="btn mini secondary" size="mini" bindtap="onNextMonth">下月</button>
   </view>
 
   <view class="actions">
-    <button class="btn mini" size="mini" bindtap="onSelectAllMonth">全选本月</button>
-    <button class="btn mini" size="mini" bindtap="onDeselectAllMonth">取消本月</button>
-    <button class="btn mini danger" size="mini" bindtap="onClearStorage">清空数据</button>
+    <button class="btn mini secondary" size="mini" bindtap="onSelectAllMonth">全选本月</button>
+    <button class="btn mini secondary" size="mini" bindtap="onDeselectAllMonth">取消本月</button>
+    <button class="btn mini danger" size="mini" bindtap="onClearStorage">重新选择</button>
   </view>
 
   <view class="calendar">
@@ -69,7 +69,10 @@
   <view class="card result-card">
     <view class="result-top">
       <text class="result-title">计算结果</text>
-      <text class="result-amount">￥{{salaryResultText}}</text>
+      <view class="result-right">
+        <text class="result-amount">￥{{salaryResultText}}</text>
+        <button class="btn mini primary" size="mini" open-type="share">分享工资单</button>
+      </view>
     </view>
     <text class="muted result-breakdown">
       工作日上工 {{workedCount}} 天 + 法定节假日(带薪) {{holidayPaidCount}} 天 + 节假日加班 {{holidayWorkedCount}} 天(额外×2) = 计薪单位 {{payUnits}} 天
