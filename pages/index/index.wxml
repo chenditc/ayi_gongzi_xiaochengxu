@@ -10,7 +10,24 @@
   <view class="actions">
     <button class="btn mini secondary" size="mini" bindtap="onSelectAllMonth">全选本月</button>
     <button class="btn mini secondary" size="mini" bindtap="onDeselectAllMonth">取消本月</button>
+    <button
+      class="btn mini {{pairingMode ? 'pairing-active' : 'secondary'}}"
+      size="mini"
+      bindtap="onTogglePairingMode"
+      id="pairBtn"
+    >{{pairingMode ? '取消调休' : '协商调休'}}</button>
     <button class="btn mini danger" size="mini" bindtap="onClearStorage">重新选择</button>
+  </view>
+
+  <view wx:if="{{pairingMode}}" class="pairing-banner">
+    <view wx:if="{{!pairingFirstDate}}" class="pairing-hint">
+      <text class="pairing-step">第 1 步</text>
+      <text class="pairing-text">点选一个法定节假日（带「法」角标）</text>
+    </view>
+    <view wx:else class="pairing-hint">
+      <text class="pairing-step">第 2 步</text>
+      <text class="pairing-text">已选 {{pairingFirstDate}}，再点一个本月非节假日完成调休</text>
+    </view>
   </view>
 
   <view class="calendar" id="calendarArea">
@@ -31,13 +48,16 @@
       <view
         wx:for="{{calendarCells}}"
         wx:key="index"
-        class="cell {{item.empty ? 'empty' : ''}} {{item.selected ? 'selected' : ''}} {{item.isHoliday ? 'holiday' : ''}} {{item.isHolidayWorked ? 'holiday-worked' : ''}}"
+        class="cell {{item.empty ? 'empty' : ''}} {{item.selected ? 'selected' : ''}} {{item.isHoliday ? 'holiday' : ''}} {{item.isHolidayWorked ? 'holiday-worked' : ''}} {{item.isSwapHoliday ? 'swap-holiday' : ''}} {{item.isSwapSwap ? 'swap-target' : ''}} {{item.pairingFirstSelected ? 'pairing-first' : ''}}"
         bindtap="onToggleDay"
         data-datestr="{{item.dateStr}}"
       >
-        <text wx:if="{{item.isHoliday}}" class="badge-holiday">法</text>
+        <text wx:if="{{item.isSwapHoliday}}" class="badge-swap">调</text>
+        <text wx:elif="{{item.isSwapSwap}}" class="badge-swap badge-swap-rest">休</text>
+        <text wx:elif="{{item.isHoliday}}" class="badge-holiday">法</text>
         <text class="cell-text">{{item.empty ? '' : item.day}}</text>
-        <text wx:if="{{item.isHoliday && item.holidayName}}" class="holiday-name">{{item.holidayName}}</text>
+        <text wx:if="{{item.isHoliday && item.holidayName && !item.isSwapHoliday}}" class="holiday-name">{{item.holidayName}}</text>
+        <text wx:if="{{item.swapPartnerDay}}" class="swap-partner">↔{{item.swapPartnerDay}}</text>
       </view>
     </view>
   </view>
@@ -77,7 +97,30 @@
     <text class="muted result-breakdown">
       工作日上工 {{workedCount}} 天 + 法定节假日(带薪) {{holidayPaidCount}} 天 + 节假日加班 {{holidayWorkedCount}} 天(额外×2) = 计薪单位 {{payUnits}} 天
     </text>
+    <text wx:if="{{swapPairsCount > 0}}" class="muted result-swap-note">
+      已扣除 {{swapPairsCount}} 对协商调休（节假日按工作日计、对应工作日按带薪休息计）
+    </text>
     <text class="muted result-formula">{{resultText}}</text>
+  </view>
+
+  <view wx:if="{{swapPairsCount > 0}}" class="card swap-card">
+    <view class="swap-card-top">
+      <text class="swap-card-title">协商调休（{{swapPairsCount}} 对）</text>
+      <button class="btn mini secondary" size="mini" bindtap="onToggleSwapList">
+        {{showSwapList ? '收起' : '展开'}}
+      </button>
+    </view>
+    <view wx:if="{{showSwapList}}" class="swap-list">
+      <view class="swap-item" wx:for="{{swapPairsDisplay}}" wx:key="holiday">
+        <text class="swap-item-text">{{item.displayText}}</text>
+        <button
+          class="btn mini secondary swap-remove-btn"
+          size="mini"
+          bindtap="onRemoveSwapPair"
+          data-holiday="{{item.holiday}}"
+        >解除</button>
+      </view>
+    </view>
   </view>
 
   <view class="selectedbar">

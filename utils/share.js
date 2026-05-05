@@ -1,4 +1,4 @@
-const { formatDateStr, pad2 } = require('./date')
+const { formatDateStr, pad2, isValidDateStr } = require('./date')
 
 const SHARE_VERSION = 1
 
@@ -42,13 +42,70 @@ function extractSelectedDaysForMonth(selectedDatesMap, year, monthIndex) {
   return days
 }
 
-function buildShareQuery({ year, monthIndex, selectedDatesMap, monthlySalary, workDays }) {
+function extractSwapPairsForMonth(swapPairs, year, monthIndex) {
+  const prefix = getMonthPrefix(year, monthIndex)
+  const out = []
+  if (!Array.isArray(swapPairs)) return out
+  for (const pair of swapPairs) {
+    if (!pair || typeof pair !== 'object') continue
+    const h = pair.holiday
+    const s = pair.swap
+    if (!isValidDateStr(h) || !isValidDateStr(s)) continue
+    if (!h.startsWith(prefix) || !s.startsWith(prefix)) continue
+    out.push({ holiday: h, swap: s })
+  }
+  out.sort((a, b) => (a.holiday < b.holiday ? -1 : a.holiday > b.holiday ? 1 : 0))
+  return out
+}
+
+function encodeSwapPairsForMonth(swapPairs, year, monthIndex) {
+  const pairs = extractSwapPairsForMonth(swapPairs, year, monthIndex)
+  if (pairs.length === 0) return ''
+  const parts = []
+  for (const p of pairs) {
+    const hDay = Number(p.holiday.slice(8, 10))
+    const sDay = Number(p.swap.slice(8, 10))
+    if (!Number.isFinite(hDay) || !Number.isFinite(sDay)) continue
+    if (hDay < 1 || hDay > 31 || sDay < 1 || sDay > 31) continue
+    if (hDay === sDay) continue
+    parts.push(`${hDay}-${sDay}`)
+  }
+  return parts.join(',')
+}
+
+function decodeSwapPairsFromMonth(encoded, year, monthIndex) {
+  const out = []
+  const used = Object.create(null)
+  if (typeof encoded !== 'string' || encoded === '') return out
+  const parts = encoded.split(',')
+  for (const piece of parts) {
+    if (!piece) continue
+    const halves = piece.split('-')
+    if (halves.length !== 2) continue
+    const hDay = Number(halves[0])
+    const sDay = Number(halves[1])
+    if (!Number.isInteger(hDay) || !Number.isInteger(sDay)) continue
+    if (hDay < 1 || hDay > 31 || sDay < 1 || sDay > 31) continue
+    if (hDay === sDay) continue
+    const holiday = formatDateStr(year, monthIndex, hDay)
+    const swap = formatDateStr(year, monthIndex, sDay)
+    if (!isValidDateStr(holiday) || !isValidDateStr(swap)) continue
+    if (used[holiday] || used[swap]) continue
+    used[holiday] = true
+    used[swap] = true
+    out.push({ holiday, swap })
+  }
+  return out
+}
+
+function buildShareQuery({ year, monthIndex, selectedDatesMap, swapPairs, monthlySalary, workDays }) {
   const y = Number(year)
   const m1 = Number(monthIndex) + 1
   const m = clampInt(m1, 1, 12)
 
   const days = extractSelectedDaysForMonth(selectedDatesMap, y, m - 1)
   const d = days.join(',')
+  const p = encodeSwapPairsForMonth(swapPairs, y, m - 1)
 
   const salary = monthlySalary == null ? '' : String(monthlySalary)
   const work = workDays == null ? '' : String(workDays)
@@ -59,6 +116,7 @@ function buildShareQuery({ year, monthIndex, selectedDatesMap, monthlySalary, wo
     `y=${encodeURIComponent(String(y))}`,
     `m=${encodeURIComponent(String(m))}`,
     `d=${encodeURIComponent(d)}`,
+    `p=${encodeURIComponent(p)}`,
     `salary=${encodeURIComponent(salary)}`,
     `work=${encodeURIComponent(work)}`,
   ]
@@ -104,10 +162,22 @@ function parseSharedOptions(options) {
     selectedDatesMap[formatDateStr(y, monthIndex, day)] = true
   }
 
+  const pRaw = options.p == null ? '' : safeDecode(options.p)
+  const swapPairs = decodeSwapPairsFromMonth(pRaw, y, monthIndex)
+
   const monthlySalary = options.salary == null ? '' : safeDecode(options.salary)
   const workDays = options.work == null ? '' : safeDecode(options.work)
 
-  return { ok: true, year: y, monthIndex, selectedDatesMap, monthlySalary, workDays, version: v }
+  return {
+    ok: true,
+    year: y,
+    monthIndex,
+    selectedDatesMap,
+    swapPairs,
+    monthlySalary,
+    workDays,
+    version: v,
+  }
 }
 
 function replaceMonthSelection(baseSelectedDatesMap, year, monthIndex, monthSelectedDatesMap) {
@@ -128,13 +198,49 @@ function replaceMonthSelection(baseSelectedDatesMap, year, monthIndex, monthSele
   return next
 }
 
+function replaceMonthSwapPairs(baseSwapPairs, year, monthIndex, monthSwapPairs) {
+  const prefix = getMonthPrefix(year, monthIndex)
+  const next = []
+  const used = Object.create(null)
+
+  if (Array.isArray(baseSwapPairs)) {
+    for (const p of baseSwapPairs) {
+      if (!p || typeof p !== 'object') continue
+      if (!isValidDateStr(p.holiday) || !isValidDateStr(p.swap)) continue
+      if (p.holiday.startsWith(prefix) || p.swap.startsWith(prefix)) continue
+      if (used[p.holiday] || used[p.swap]) continue
+      used[p.holiday] = true
+      used[p.swap] = true
+      next.push({ holiday: p.holiday, swap: p.swap })
+    }
+  }
+
+  if (Array.isArray(monthSwapPairs)) {
+    for (const p of monthSwapPairs) {
+      if (!p || typeof p !== 'object') continue
+      if (!isValidDateStr(p.holiday) || !isValidDateStr(p.swap)) continue
+      if (used[p.holiday] || used[p.swap]) continue
+      used[p.holiday] = true
+      used[p.swap] = true
+      next.push({ holiday: p.holiday, swap: p.swap })
+    }
+  }
+
+  next.sort((a, b) => (a.holiday < b.holiday ? -1 : a.holiday > b.holiday ? 1 : 0))
+  return next
+}
+
 module.exports = {
   SHARE_VERSION,
   getMonthPrefix,
   extractSelectedDaysForMonth,
+  extractSwapPairsForMonth,
+  encodeSwapPairsForMonth,
+  decodeSwapPairsFromMonth,
   buildShareQuery,
   buildSharePath,
   parseSharedOptions,
   replaceMonthSelection,
+  replaceMonthSwapPairs,
 }
 
