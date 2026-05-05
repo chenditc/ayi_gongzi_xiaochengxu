@@ -16,6 +16,8 @@ const {
   buildShareQuery,
   parseSharedOptions,
   replaceMonthSelection,
+  replaceMonthSwapPairs,
+  extractSwapPairsForMonth,
 } = require('../../utils/share')
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -25,6 +27,7 @@ const GUIDE_SEEN_KEY = 'ayi_calendar_salary_guide_seen'
 const GUIDE_STEPS = [
   { selector: '#calendarArea', text: '点击选择上工的日期，自动计算工资' },
   { selector: '#weekHeader', text: '点击这里，批量选择或取消' },
+  { selector: '#pairBtn', text: '协商调休：把节假日上班和工作日休息配成一对，抵消双倍工资' },
   { selector: '#shareBtn', text: '点击这里，发送本页内容给其他人' },
 ]
 
@@ -41,7 +44,7 @@ function clampInt(n, min, max) {
   return x
 }
 
-function buildCalendar(year, monthIndex, selectedDatesMap) {
+function buildCalendar(year, monthIndex, selectedDatesMap, swapPartnerMap, swapHolidaySet, pairingFirstDate) {
   const firstWeekday = new Date(year, monthIndex, 1).getDay()
   const days = daysInMonth(year, monthIndex)
   const cells = []
@@ -57,6 +60,10 @@ function buildCalendar(year, monthIndex, selectedDatesMap) {
         isHoliday: false,
         holidayName: '',
         isHolidayWorked: false,
+        isSwapHoliday: false,
+        isSwapSwap: false,
+        swapPartnerDay: '',
+        pairingFirstSelected: false,
       })
       continue
     }
@@ -66,6 +73,14 @@ function buildCalendar(year, monthIndex, selectedDatesMap) {
     const selected = !!(selectedDatesMap && selectedDatesMap[dateStr])
     const isHoliday = isStatutoryHoliday(dateStr)
     const holidayName = isHoliday ? getHolidayName(dateStr) : ''
+    const partner = swapPartnerMap && swapPartnerMap[dateStr]
+    const isSwapHoliday = !!(swapHolidaySet && swapHolidaySet[dateStr])
+    const isSwapSwap = !!partner && !isSwapHoliday
+    let swapPartnerDay = ''
+    if (partner) {
+      const pday = Number(partner.slice(8, 10))
+      if (Number.isFinite(pday)) swapPartnerDay = String(pday)
+    }
     cells.push({
       empty: false,
       day,
@@ -74,7 +89,11 @@ function buildCalendar(year, monthIndex, selectedDatesMap) {
       selected,
       isHoliday,
       holidayName,
-      isHolidayWorked: isHoliday && selected,
+      isHolidayWorked: isHoliday && selected && !isSwapHoliday,
+      isSwapHoliday,
+      isSwapSwap,
+      swapPartnerDay,
+      pairingFirstSelected: !!(pairingFirstDate && pairingFirstDate === dateStr),
     })
   }
 
@@ -89,6 +108,7 @@ function computeWeekdayColumnAllSelected(cells) {
     for (let i = weekday; i < 42; i += 7) {
       const c = cells[i]
       if (!c || c.empty) continue
+      if (c.isSwapSwap) continue
       any = true
       if (!c.selected) {
         all = false
@@ -100,7 +120,7 @@ function computeWeekdayColumnAllSelected(cells) {
   return res
 }
 
-function buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex) {
+function buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex, swapHolidaySet) {
   const prefix = `${year}-${pad2(monthIndex + 1)}-`
   const keys = Object.keys(selectedDatesMap || {})
     .filter((k) => selectedDatesMap[k])
@@ -109,18 +129,51 @@ function buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex) {
   return keys.map((dateStr) => {
     const wd = parseWeekday(dateStr)
     const isHoliday = isStatutoryHoliday(dateStr)
+    const isSwapHoliday = !!(swapHolidaySet && swapHolidaySet[dateStr])
     const holidayName = isHoliday ? getHolidayName(dateStr) : ''
-    const tag = isHoliday ? '节假日加班' : '工作日上工'
+    let tag
+    if (isHoliday && isSwapHoliday) tag = '调休上工'
+    else if (isHoliday) tag = '节假日加班'
+    else tag = '工作日上工'
     const holidayPart = holidayName ? ` ${holidayName}` : ''
     return {
       dateStr,
       weekdayLabel: wd == null ? '' : WEEKDAY_LABELS[wd],
       isHoliday,
+      isSwapHoliday,
       holidayName,
       tag,
       displayText: `${dateStr} ${wd == null ? '' : WEEKDAY_LABELS[wd]}${holidayPart}（${tag}）`,
     }
   })
+}
+
+function buildSwapPairsDisplay(swapPairsForMonth) {
+  return (swapPairsForMonth || []).map((p) => {
+    const hWd = parseWeekday(p.holiday)
+    const sWd = parseWeekday(p.swap)
+    const holidayName = getHolidayName(p.holiday) || ''
+    const hLabel = `${p.holiday.slice(5)}${hWd == null ? '' : ' ' + WEEKDAY_LABELS[hWd]}${holidayName ? ' ' + holidayName : ''}`
+    const sLabel = `${p.swap.slice(5)}${sWd == null ? '' : ' ' + WEEKDAY_LABELS[sWd]}`
+    return {
+      holiday: p.holiday,
+      swap: p.swap,
+      displayText: `${hLabel}  ↔  ${sLabel}`,
+    }
+  })
+}
+
+function buildSwapMaps(swapPairsForMonth) {
+  const swapHolidaySet = Object.create(null)
+  const swapSwapSet = Object.create(null)
+  const swapPartnerMap = Object.create(null)
+  for (const p of swapPairsForMonth || []) {
+    swapHolidaySet[p.holiday] = true
+    swapSwapSet[p.swap] = true
+    swapPartnerMap[p.holiday] = p.swap
+    swapPartnerMap[p.swap] = p.holiday
+  }
+  return { swapHolidaySet, swapSwapSet, swapPartnerMap }
 }
 
 function computeSalaryResult(workedCount, holidayPaidCount, holidayWorkedCount, monthlySalary, workDays) {
@@ -142,11 +195,14 @@ Page({
     monthIndexPlus1: 1,
     calendarCells: [],
     selectedDatesMap: {},
+    swapPairs: [],
+    swapPairsDisplay: [],
     monthlySalary: '8000',
     workDays: '26',
     workedCount: 0,
     holidayPaidCount: 0,
     holidayWorkedCount: 0,
+    swapPairsCount: 0,
     payUnits: 0,
     salaryResult: 0,
     salaryResultText: '0.00',
@@ -156,6 +212,12 @@ Page({
     storageStatus: '未保存',
     showSelectedList: false,
     selectedDatesDisplay: [],
+
+    // Pairing mode state
+    pairingMode: false,
+    pairingFirstDate: '',
+    pairingHint: '',
+    showSwapList: false,
 
     // First-time guide (coach marks)
     guideVisible: false,
@@ -202,12 +264,23 @@ Page({
 
     const monthlySalary = loaded.monthlySalary !== '' ? loaded.monthlySalary : '8000'
     const workDays = loaded.workDays !== '' ? loaded.workDays : '26'
+    const swapPairs = loaded.swapPairs || []
 
     const shared = parseSharedOptions(options)
     if (shared.ok) {
       initYear = shared.year
       initMonthIndex = shared.monthIndex
       const merged = replaceMonthSelection(map, shared.year, shared.monthIndex, shared.selectedDatesMap)
+      const mergedSwap = replaceMonthSwapPairs(
+        swapPairs,
+        shared.year,
+        shared.monthIndex,
+        shared.swapPairs
+      )
+      // Strip selection on swap targets (defensive: swap targets must remain unselected)
+      for (const p of mergedSwap) {
+        if (merged[p.swap]) delete merged[p.swap]
+      }
       const shareMonthlySalary = shared.monthlySalary !== '' ? shared.monthlySalary : monthlySalary
       const shareWorkDays = shared.workDays !== '' ? shared.workDays : workDays
       this._applyState(
@@ -215,6 +288,7 @@ Page({
           year: initYear,
           monthIndex: initMonthIndex,
           selectedDatesMap: merged,
+          swapPairs: mergedSwap,
           monthlySalary: shareMonthlySalary,
           workDays: shareWorkDays,
         },
@@ -230,11 +304,13 @@ Page({
         year: initYear,
         monthIndex: initMonthIndex,
         selectedDatesMap: map,
+        swapPairs,
         monthlySalary,
         workDays,
-        storageStatus: loaded.selectedDates.length || loaded.monthlySalary || loaded.workDays
-          ? `已加载 ${nowTimeText()}`
-          : '未保存',
+        storageStatus:
+          loaded.selectedDates.length || loaded.monthlySalary || loaded.workDays || swapPairs.length
+            ? `已加载 ${nowTimeText()}`
+            : '未保存',
       },
       { save: false }
     )
@@ -385,12 +461,31 @@ Page({
     const monthlySalary =
       partial.monthlySalary != null ? partial.monthlySalary : this.data.monthlySalary
     const workDays = partial.workDays != null ? partial.workDays : this.data.workDays
+    const swapPairs = partial.swapPairs != null ? partial.swapPairs : this.data.swapPairs
+    const pairingFirstDate =
+      partial.pairingFirstDate != null ? partial.pairingFirstDate : this.data.pairingFirstDate
 
-    const calendarCells = buildCalendar(year, monthIndex, selectedDatesMap)
+    const swapPairsForMonth = extractSwapPairsForMonth(swapPairs, year, monthIndex)
+    const { swapHolidaySet, swapSwapSet, swapPartnerMap } = buildSwapMaps(swapPairsForMonth)
+
+    const calendarCells = buildCalendar(
+      year,
+      monthIndex,
+      selectedDatesMap,
+      swapPartnerMap,
+      swapHolidaySet,
+      pairingFirstDate
+    )
     const holidayList = listStatutoryHolidaysForMonth(year, monthIndex)
     const holidaySet = Object.create(null)
     for (const h of holidayList) holidaySet[h.dateStr] = true
-    const holidayPaidCount = holidayList.length
+
+    // holidayPaidCount: untouched holidays + swap targets (acting as paid rest)
+    let holidayPaidCount = 0
+    for (const h of holidayList) {
+      if (!swapHolidaySet[h.dateStr]) holidayPaidCount += 1
+    }
+    holidayPaidCount += swapPairsForMonth.length
 
     const monthPrefix = `${year}-${pad2(monthIndex + 1)}-`
     let holidayWorkedCount = 0
@@ -398,8 +493,13 @@ Page({
     for (const dateStr of Object.keys(selectedDatesMap || {})) {
       if (!selectedDatesMap[dateStr]) continue
       if (!dateStr.startsWith(monthPrefix)) continue
-      if (holidaySet[dateStr]) holidayWorkedCount += 1
-      else workedCount += 1
+      if (swapSwapSet[dateStr]) continue // defensive: swap targets aren't selectable
+      if (holidaySet[dateStr]) {
+        if (swapHolidaySet[dateStr]) workedCount += 1
+        else holidayWorkedCount += 1
+      } else {
+        workedCount += 1
+      }
     }
     const payUnits = workedCount + holidayPaidCount + 2 * holidayWorkedCount
 
@@ -411,7 +511,13 @@ Page({
       workDays
     )
     const weekdayColumnAllSelected = computeWeekdayColumnAllSelected(calendarCells)
-    const selectedDatesDisplay = buildSelectedDatesDisplay(selectedDatesMap, year, monthIndex)
+    const selectedDatesDisplay = buildSelectedDatesDisplay(
+      selectedDatesMap,
+      year,
+      monthIndex,
+      swapHolidaySet
+    )
+    const swapPairsDisplay = buildSwapPairsDisplay(swapPairsForMonth)
 
     const patch = {
       ...partial,
@@ -424,20 +530,38 @@ Page({
       workedCount,
       holidayPaidCount,
       holidayWorkedCount,
+      swapPairs,
+      swapPairsCount: swapPairsForMonth.length,
+      swapPairsDisplay,
       payUnits,
       salaryResult: salaryComputed.salaryResult,
       salaryResultText: salaryComputed.salaryResultText,
       resultText: salaryComputed.resultText,
       weekdayColumnAllSelected,
       selectedDatesDisplay,
+      pairingFirstDate,
     }
 
     if (options.save) {
-      saveState({ selectedDatesMap, monthlySalary, workDays })
+      saveState({ selectedDatesMap, swapPairs, monthlySalary, workDays })
       patch.storageStatus = `已保存 ${nowTimeText()}`
     }
 
     this.setData(patch)
+  },
+
+  _exitPairingModeIfActive() {
+    if (this.data.pairingMode || this.data.pairingFirstDate) {
+      this.setData({ pairingMode: false, pairingFirstDate: '' })
+    }
+  },
+
+  _swapPartnerOf(dateStr) {
+    for (const p of this.data.swapPairs || []) {
+      if (p.holiday === dateStr) return p
+      if (p.swap === dateStr) return p
+    }
+    return null
   },
 
   onPrevMonth() {
@@ -447,7 +571,8 @@ Page({
       m = 11
       y -= 1
     }
-    this._applyState({ year: y, monthIndex: m }, { save: false })
+    this._exitPairingModeIfActive()
+    this._applyState({ year: y, monthIndex: m, pairingFirstDate: '' }, { save: false })
   },
 
   onNextMonth() {
@@ -457,18 +582,127 @@ Page({
       m = 0
       y += 1
     }
-    this._applyState({ year: y, monthIndex: m }, { save: false })
+    this._exitPairingModeIfActive()
+    this._applyState({ year: y, monthIndex: m, pairingFirstDate: '' }, { save: false })
+  },
+
+  onTogglePairingMode() {
+    if (this.data.pairingMode) {
+      this.setData({ pairingMode: false, pairingFirstDate: '' })
+      this._applyState({ pairingFirstDate: '' }, { save: false })
+      return
+    }
+    const monthHasHoliday = listStatutoryHolidaysForMonth(this.data.year, this.data.monthIndex).length > 0
+    if (!monthHasHoliday) {
+      wx.showToast({ title: '本月无法定节假日', icon: 'none' })
+      return
+    }
+    this.setData({ pairingMode: true, pairingFirstDate: '' })
+  },
+
+  _handlePairingTap(dateStr) {
+    const monthPrefix = `${this.data.year}-${pad2(this.data.monthIndex + 1)}-`
+    if (!dateStr.startsWith(monthPrefix)) {
+      wx.showToast({ title: '只能配对当前月份', icon: 'none' })
+      return
+    }
+
+    const inPair = this._swapPartnerOf(dateStr)
+    if (inPair) {
+      wx.showToast({ title: '该日期已在调休中，请先解除', icon: 'none' })
+      return
+    }
+
+    const isHoliday = isStatutoryHoliday(dateStr)
+    const first = this.data.pairingFirstDate
+
+    if (!first) {
+      if (!isHoliday) {
+        wx.showToast({ title: '请先选一个法定节假日', icon: 'none' })
+        return
+      }
+      this._applyState({ pairingFirstDate: dateStr }, { save: false })
+      return
+    }
+
+    if (dateStr === first) {
+      this._applyState({ pairingFirstDate: '' }, { save: false })
+      return
+    }
+
+    if (isHoliday) {
+      wx.showToast({ title: '请选一个非节假日来调休', icon: 'none' })
+      return
+    }
+
+    const newPair = { holiday: first, swap: dateStr }
+    const nextSwapPairs = [...(this.data.swapPairs || []), newPair]
+    nextSwapPairs.sort((a, b) => (a.holiday < b.holiday ? -1 : a.holiday > b.holiday ? 1 : 0))
+
+    const nextSelected = { ...(this.data.selectedDatesMap || {}) }
+    if (nextSelected[dateStr]) delete nextSelected[dateStr]
+
+    this.setData({ pairingMode: false })
+    this._applyState(
+      {
+        swapPairs: nextSwapPairs,
+        selectedDatesMap: nextSelected,
+        pairingFirstDate: '',
+      },
+      { save: true }
+    )
+    wx.showToast({
+      title: `已配对：${first.slice(5)} ↔ ${dateStr.slice(5)}`,
+      icon: 'none',
+      duration: 2000,
+    })
+  },
+
+  onRemoveSwapPair(e) {
+    const holiday = e.currentTarget.dataset.holiday
+    if (!holiday) return
+    const target = (this.data.swapPairs || []).find((p) => p.holiday === holiday)
+    if (!target) return
+    const summary = `${target.holiday.slice(5)} ↔ ${target.swap.slice(5)}`
+    wx.showModal({
+      title: '解除调休？',
+      content: `解除「${summary}」后，这两天将恢复为原始状态。`,
+      confirmText: '解除',
+      confirmColor: '#862e9c',
+      success: (res) => {
+        if (!res.confirm) return
+        const next = (this.data.swapPairs || []).filter((p) => p.holiday !== holiday)
+        this._applyState({ swapPairs: next }, { save: true })
+      },
+    })
+  },
+
+  onToggleSwapList() {
+    this.setData({ showSwapList: !this.data.showSwapList })
   },
 
   onToggleDay(e) {
     const dateStr = e.currentTarget.dataset.datestr
     if (!dateStr) return
+
+    if (this.data.pairingMode) {
+      this._handlePairingTap(dateStr)
+      return
+    }
+
+    const partner = this._swapPartnerOf(dateStr)
+    if (partner && partner.swap === dateStr) {
+      wx.showToast({ title: '调休休息日不可上工', icon: 'none' })
+      return
+    }
+
     const wasSelected = !!(this.data.selectedDatesMap && this.data.selectedDatesMap[dateStr])
     const next = { ...(this.data.selectedDatesMap || {}) }
     if (next[dateStr]) delete next[dateStr]
     else next[dateStr] = true
 
-    if (!wasSelected && isStatutoryHoliday(dateStr) && !this._holidayWorkToastShown) {
+    const isSwapHoliday = !!(partner && partner.holiday === dateStr)
+    if (!wasSelected && isStatutoryHoliday(dateStr) && !isSwapHoliday && !this._holidayWorkToastShown) {
       this._holidayWorkToastShown = true
       wx.showToast({
         title: '已按节假日加班(额外×2)计入',
@@ -483,6 +717,7 @@ Page({
   onToggleWeekdayColumn(e) {
     const weekdayIndex = Number(e.currentTarget.dataset.weekday)
     if (!Number.isFinite(weekdayIndex) || weekdayIndex < 0 || weekdayIndex > 6) return
+    if (this.data.pairingMode) return
 
     const y = this.data.year
     const m = this.data.monthIndex
@@ -490,10 +725,13 @@ Page({
     const next = { ...(this.data.selectedDatesMap || {}) }
 
     const isAllSelected = !!this.data.weekdayColumnAllSelected[weekdayIndex]
+    const swapTargets = Object.create(null)
+    for (const p of this.data.swapPairs || []) swapTargets[p.swap] = true
 
     for (let day = 1; day <= days; day += 1) {
       if (weekdayOf(y, m, day) !== weekdayIndex) continue
       const dateStr = formatDateStr(y, m, day)
+      if (swapTargets[dateStr]) continue
       if (isAllSelected) delete next[dateStr]
       else next[dateStr] = true
     }
@@ -502,17 +740,23 @@ Page({
   },
 
   onSelectAllMonth() {
+    if (this.data.pairingMode) return
     const y = this.data.year
     const m = this.data.monthIndex
     const days = daysInMonth(y, m)
     const next = { ...(this.data.selectedDatesMap || {}) }
+    const swapTargets = Object.create(null)
+    for (const p of this.data.swapPairs || []) swapTargets[p.swap] = true
     for (let day = 1; day <= days; day += 1) {
-      next[formatDateStr(y, m, day)] = true
+      const dateStr = formatDateStr(y, m, day)
+      if (swapTargets[dateStr]) continue
+      next[dateStr] = true
     }
     this._applyState({ selectedDatesMap: next }, { save: true })
   },
 
   onDeselectAllMonth() {
+    if (this.data.pairingMode) return
     const y = this.data.year
     const m = this.data.monthIndex
     const days = daysInMonth(y, m)
@@ -526,18 +770,21 @@ Page({
   onClearStorage() {
     wx.showModal({
       title: '重新选择？',
-      content: '会清空已保存的选择日期、月薪和应出勤天数，并恢复默认值。',
+      content: '会清空已保存的选择日期、月薪、应出勤天数和调休配对，并恢复默认值。',
       confirmText: '重新选择',
       confirmColor: '#e64646',
       success: (res) => {
         if (!res.confirm) return
         clearState()
+        this.setData({ pairingMode: false, pairingFirstDate: '' })
         this._applyState(
           {
             selectedDatesMap: {},
+            swapPairs: [],
             monthlySalary: '8000',
             workDays: '26',
             storageStatus: `已重置 ${nowTimeText()}`,
+            pairingFirstDate: '',
           },
           { save: false }
         )
@@ -592,6 +839,7 @@ Page({
       year: this.data.year,
       monthIndex: this.data.monthIndex,
       selectedDatesMap: this.data.selectedDatesMap,
+      swapPairs: this.data.swapPairs,
       monthlySalary: this.data.monthlySalary,
       workDays: this.data.workDays,
     })
@@ -604,6 +852,7 @@ Page({
       year: this.data.year,
       monthIndex: this.data.monthIndex,
       selectedDatesMap: this.data.selectedDatesMap,
+      swapPairs: this.data.swapPairs,
       monthlySalary: this.data.monthlySalary,
       workDays: this.data.workDays,
     })
